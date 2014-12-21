@@ -1,0 +1,55 @@
+Not a socket, and no --fake-ip specified - using 127.0.0.2
+Not a socket, and no --fake-port specified - using 1024
+Tue Jul 13 07:07:36 2004 UTC : Spooling into 20040713-070736-0-127.0.0.2.xml
+Use of uninitialized value in pattern match (m//) at /usr/share/perl5/XML/Writer.pm line 321.
+Use of uninitialized value in print at /usr/lib/perl/5.8/IO/Handle.pm line 147.
+Tue Jul 13 07:08:14 2004 UTC : syslog: peer=127.0.0.2:1024 attempted=0 file=20040713-070736-0-127.0.0.2.xml
+Tue Jul 13 07:08:14 2004 UTC : 127.0.0.2:1024 disonnected (quit-command)
+Not a socket, and no --fake-ip specified - using 127.0.0.2
+Not a socket, and no --fake-port specified - using 1024
+Tue Jul 27 23:11:11 2004 UTC : Spooling into 20040727-231111-0-127.0.0.2.xml
+Tue Jul 27 23:11:21 2004 UTC : syslog: peer=127.0.0.2:1024 attempted=0 file=20040727-231111-0-127.0.0.2.xml
+Tue Jul 27 23:11:21 2004 UTC : 127.0.0.2:1024 disconnected (quit-command)
+Not a socket, and no --fake-ip specified - using 127.0.0.2
+Not a socket, and no --fake-port specified - using 1024
+Tue Jul 27 23:13:13 2004 UTC : Spooling into 20040727-231313-0-127.0.0.2.xml
+Tue Jul 27 23:13:20 2004 UTC : syslog: peer=127.0.0.2:1024 attempted=0 file=20040727-231313-0-127.0.0.2.xml
+Tue Jul 27 23:13:20 2004 UTC : 127.0.0.2:1024 disconnected (quit-command)
+Not a socket, and no --fake-ip specified - using 127.0.0.2
+Not a socket, and no --fake-port specified - using 1024
+Tue Jul 27 23:13:59 2004 UTC : Spooling into 20040727-231359-0-127.0.0.2.xml
+Use of uninitialized value in pattern match (m//) at /usr/share/perl5/XML/Writer.pm line 321.
+Use of uninitialized value in print at /usr/lib/perl/5.8/IO/Handle.pm line 147.
+Tue Jul 27 23:14:24 2004 UTC : syslog: peer=127.0.0.2:1024 attempted=0 file=20040727-231359-0-127.0.0.2.xml
+Tue Jul 27 23:14:24 2004 UTC : 127.0.0.2:1024 disconnected (quit-command)
+Not a socket, and no --fake-ip specified - using 127.0.0.2
+Not a socket, and no --fake-port specified - using 1024
+Tue Jul 27 23:19:10 2004 UTC : Spooling into 20040727-231910-0-127.0.0.2.xml
+Tue Jul 27 23:19:25 2004 UTC : Lost connection from 127.0.0.2:1024
+Tue Jul 27 23:19:25 2004 UTC : syslog: peer=127.0.0.2:1024 attempted=0 file=20040727-231910-0-127.0.0.2.xml
+Tue Jul 27 23:19:25 2004 UTC : 127.0.0.2:1024 disconnected (lost-connection)
+Not a socket, and no --fake-ip specified - using 127.0.0.2
+Not a socket, and no --fake-port specified - using 1024
+Tue Jul 27 23:20:25 2004 UTC : Spooling into 20040727-232025-0-127.0.0.2.xml
+Tue Jul 27 23:20:32 2004 UTC : syslog: peer=127.0.0.2:1024 attempted=0 file=20040727-232025-0-127.0.0.2.xml
+Tue Jul 27 23:20:32 2004 UTC : 127.0.0.2:1024 disconnected (command-limit-reached)
+Not a socket, and no --fake-ip specified - using 127.0.0.2
+Not a socket, and no --fake-port specified - using 1024
+Thu Jul 29 19:17:36 2004 UTC : Spooling into 20040729-191736-0-127.0.0.2.xml
+Thu Jul 29 19:17:48 2004 UTC : syslog: peer=127.0.0.2:1024 attempted=0 file=20040729-191736-0-127.0.0.2.xml
+Thu Jul 29 19:17:48 2004 UTC : 127.0.0.2:1024 disconnected (quit-command)
+Not a socket, and no --fake-ip specified - using 127.0.0.2
+Not a socket, and no --fake-port specified - using 1024
+Thu Jul 29 19:18:01 2004 UTC : Spooling into 20040729-191801-0-127.0.0.2.xml
+Thu Jul 29 19:18:09 2004 UTC : syslog: peer=127.0.0.2:1024 attempted=0 file=20040729-191801-0-127.0.0.2.xml
+Thu Jul 29 19:18:09 2004 UTC : 127.0.0.2:1024 disconnected (quit-command)
+Overriding IP address - using 218.19.153.48 instead
+Not a socket, and no --fake-port specified - using 1024
+Sun Aug 22 18:27:09 2004 UTC : Spooling into 20040822-182709-0-218.19.153.48.xml
+Sun Aug 22 18:27:28 2004 UTC : syslog: peer=218.19.153.48:1024 attempted=0 file=20040822-182709-0-218.19.153.48.xml
+Sun Aug 22 18:27:28 2004 UTC : 218.19.153.48:1024 disconnected (quit-command)
+Overriding IP address - using 61.243.43.113 instead
+Not a socket, and no --fake-port specified - using 1024
+Sun Aug 22 18:45:00 2004 UTC : Spooling into 20040822-184500-0-61.243.43.113.xml
+Sun Aug 22 18:45:11 2004 UTC : syslog: peer=61.243.43.113:1024 attempted=0 file=20040822-184500-0-61.243.43.113.xml
+Sun Aug 22 18:45:11 2004 UTC : 61.243.43.113:1024 disconnected (quit-command)

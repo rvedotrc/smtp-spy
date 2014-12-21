@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<smtp-spy>
+  <version>$Revision: 1.12 $</version>
+  <connect-time>20040729 191801 UTC</connect-time>
+  <peer>
+    <ipv4-address>127.0.0.2</ipv4-address>
+    <ipv4-port>1024</ipv4-port>
+    <ident></ident>
+    <dns-lookup status="timeout" />
+    <dnsbl-lookup hits="8">
+      <zone>
+        <name>bl.spamcop.net</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.2</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>Blocked - see http://www.spamcop.net/bl.shtml?127.0.0.2</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>block.blars.org</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.1.255.255</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs></dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>cbl.abuseat.org</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.2</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>Blocked - see http://cbl.abuseat.org/lookup.cgi?ip=127.0.0.2</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>dnsbl.njabl.org</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.2</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>open relay -- 1008601823</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>dnsbl.sorbs.net</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.2</dns-a-rr>
+          <dns-a-rr>127.0.0.5</dns-a-rr>
+          <dns-a-rr>127.0.0.3</dns-a-rr>
+          <dns-a-rr>127.0.0.4</dns-a-rr>
+          <dns-a-rr>127.0.0.6</dns-a-rr>
+          <dns-a-rr>127.0.0.7</dns-a-rr>
+          <dns-a-rr>127.0.0.9</dns-a-rr>
+          <dns-a-rr>127.0.0.10</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>HTTP Proxy See: http://www.dnsbl.sorbs.net/cgi-bin/lookup?IP=127.0.0.2</dns-txt-rr>
+          <dns-txt-rr>Open Relay See: http://www.dnsbl.sorbs.net/cgi-bin/lookup?IP=127.0.0.2</dns-txt-rr>
+          <dns-txt-rr>SOCKS Proxy See: http://www.dnsbl.sorbs.net/cgi-bin/lookup?IP=127.0.0.2</dns-txt-rr>
+          <dns-txt-rr>Misc Server See: http://www.dnsbl.sorbs.net/cgi-bin/lookup?IP=127.0.0.2</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>list.dsbl.org</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.2</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>http://dsbl.org/listing?ip=127.0.0.2</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>relays.ordb.org</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.2</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>Listed by ORDB - for testing purposes only</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>sbl-xbl.spamhaus.org</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.2</dns-a-rr>
+          <dns-a-rr>127.0.0.4</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>http://www.spamhaus.org/SBL/sbl.lasso?query=SBL233</dns-txt-rr>
+          <dns-txt-rr>http://www.spamhaus.org/query/bl?ip=127.0.0.2</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+    </dnsbl-lookup>
+  </peer>
+  <messages></messages>
+  <disconnect-time>20040729 191809 UTC</disconnect-time>
+  <aborted-transaction>
+    <helo>foo</helo>
+  </aborted-transaction>
+  <message-count>0</message-count>
+  <command-log>
+    <response>220-Timeout while doing reverse-lookup on 127.0.0.2</response>
+    <response>220-I see you're on the following DNS blacklist(s):</response>
+    <response>220-  bl.spamcop.net - 127.0.0.2</response>
+    <response>220-       Blocked - see http://www.spamcop.net/bl.shtml?127.0.0.2</response>
+    <response>220-  block.blars.org - 127.1.255.255</response>
+    <response>220-  cbl.abuseat.org - 127.0.0.2</response>
+    <response>220-       Blocked - see http://cbl.abuseat.org/lookup.cgi?ip=127.0.0.2</response>
+    <response>220-  dnsbl.njabl.org - 127.0.0.2</response>
+    <response>220-       open relay -- 1008601823</response>
+    <response>220-  dnsbl.sorbs.net - 127.0.0.2 127.0.0.5 127.0.0.3 127.0.0.4 127.0.0.6 127.0.0.7 127.0.0.9 127.0.0.10</response>
+    <response>220-       HTTP Proxy See: http://www.dnsbl.sorbs.net/cgi-bin/lookup?IP=127.0.0.2</response>
+    <response>220-       Open Relay See: http://www.dnsbl.sorbs.net/cgi-bin/lookup?IP=127.0.0.2</response>
+    <response>220-       SOCKS Proxy See: http://www.dnsbl.sorbs.net/cgi-bin/lookup?IP=127.0.0.2</response>
+    <response>220-       Misc Server See: http://www.dnsbl.sorbs.net/cgi-bin/lookup?IP=127.0.0.2</response>
+    <response>220-  list.dsbl.org - 127.0.0.2</response>
+    <response>220-       http://dsbl.org/listing?ip=127.0.0.2</response>
+    <response>220-  relays.ordb.org - 127.0.0.2</response>
+    <response>220-       Listed by ORDB - for testing purposes only</response>
+    <response>220-  sbl-xbl.spamhaus.org - 127.0.0.2 127.0.0.4</response>
+    <response>220-       http://www.spamhaus.org/SBL/sbl.lasso?query=SBL233</response>
+    <response>220-       http://www.spamhaus.org/query/bl?ip=127.0.0.2</response>
+    <response>220 SMTP Spy ready</response>
+    <request>EHLO foo</request>
+    <response>250 Hello 'foo'</response>
+    <request>QUIT</request>
+    <response>221 OK, thanks for playing</response>
+  </command-log>
+  <disconnect-reason>quit-command</disconnect-reason>
+</smtp-spy>

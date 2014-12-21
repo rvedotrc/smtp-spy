@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<smtp-spy>
+  <version>$Revision: 1.13 $</version>
+  <connect-time>20040822 182709 UTC</connect-time>
+  <peer>
+    <ipv4-address>218.19.153.48</ipv4-address>
+    <ipv4-port>1024</ipv4-port>
+    <ident></ident>
+    <dns-lookup status="timeout" />
+    <dnsbl-lookup hits="1">
+      <zone>
+        <name>bl.spamcop.net</name>
+      </zone>
+      <zone>
+        <name>block.blars.org</name>
+      </zone>
+      <zone>
+        <name>cbl.abuseat.org</name>
+      </zone>
+      <zone>
+        <name>dnsbl.njabl.org</name>
+      </zone>
+      <zone>
+        <name>dnsbl.sorbs.net</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.10</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>Dynamic IP Address See: http://www.dnsbl.sorbs.net/lookup.shtml?218.19.153.48</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>list.dsbl.org</name>
+      </zone>
+      <zone>
+        <name>relays.ordb.org</name>
+      </zone>
+      <zone>
+        <name>sbl-xbl.spamhaus.org</name>
+      </zone>
+    </dnsbl-lookup>
+  </peer>
+  <messages>
+    <aborted-transaction></aborted-transaction>
+  </messages>
+  <disconnect-time>20040822 182728 UTC</disconnect-time>
+  <aborted-transaction></aborted-transaction>
+  <message-count>0</message-count>
+  <command-log>
+    <response>220-Timeout while doing reverse-lookup on 218.19.153.48</response>
+    <response>220-I see you're on the following DNS blacklist(s):</response>
+    <response>220-  dnsbl.sorbs.net - 127.0.0.10</response>
+    <response>220-       Dynamic IP Address See: http://www.dnsbl.sorbs.net/lookup.shtml?218.19.153.48</response>
+    <response>220 SMTP Spy ready</response>
+    <request>rset</request>
+    <response>250 Let's begin again</response>
+    <request>quit</request>
+    <response>221 OK, thanks for playing</response>
+  </command-log>
+  <disconnect-reason>quit-command</disconnect-reason>
+</smtp-spy>

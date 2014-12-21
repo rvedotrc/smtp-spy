@@ -1,0 +1,17 @@
+#!/usr/bin/perl
+# vi: set ts=4 sw=4 :
+
+use warnings;
+use strict;
+
+use RPSL;
+use Data::Dumper;
+
+my $all = do { local $/; <> };
+RPSL->Parse(\$all, sub {
+	my $o = shift;
+	use Data::Dumper;
+	print Data::Dumper->Dump([ $o ],[ 'rpsl' ]);
+});
+
+# eof dump-rpsl

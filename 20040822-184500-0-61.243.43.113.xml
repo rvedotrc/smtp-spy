@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<smtp-spy>
+  <version>$Revision: 1.13 $</version>
+  <connect-time>20040822 184500 UTC</connect-time>
+  <peer>
+    <ipv4-address>61.243.43.113</ipv4-address>
+    <ipv4-port>1024</ipv4-port>
+    <ident></ident>
+    <dns-lookup status="timeout" />
+    <dnsbl-lookup hits="5">
+      <zone>
+        <name>bl.spamcop.net</name>
+      </zone>
+      <zone>
+        <name>block.blars.org</name>
+      </zone>
+      <zone>
+        <name>cbl.abuseat.org</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.2</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>Blocked - see http://cbl.abuseat.org/lookup.cgi?ip=61.243.43.113</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>dnsbl.njabl.org</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.4</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>spam source -- 1033874216</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>dnsbl.sorbs.net</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.2</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>HTTP Proxy See: http://www.dnsbl.sorbs.net/lookup.shtml?61.243.43.113</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>list.dsbl.org</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.2</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>http://dsbl.org/listing?ip=61.243.43.113</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+      <zone>
+        <name>relays.ordb.org</name>
+      </zone>
+      <zone>
+        <name>sbl-xbl.spamhaus.org</name>
+        <dns-a-rrs>
+          <dns-a-rr>127.0.0.4</dns-a-rr>
+          <dns-a-rr>127.0.0.6</dns-a-rr>
+        </dns-a-rrs>
+        <dns-txt-rrs>
+          <dns-txt-rr>http://www.spamhaus.org/query/bl?ip=61.243.43.113</dns-txt-rr>
+        </dns-txt-rrs>
+      </zone>
+    </dnsbl-lookup>
+  </peer>
+  <messages></messages>
+  <disconnect-time>20040822 184511 UTC</disconnect-time>
+  <aborted-transaction></aborted-transaction>
+  <message-count>0</message-count>
+  <command-log>
+    <response>220-Timeout while doing reverse-lookup on 61.243.43.113</response>
+    <response>220-I see you're on the following DNS blacklist(s):</response>
+    <response>220-  cbl.abuseat.org - 127.0.0.2</response>
+    <response>220-       Blocked - see http://cbl.abuseat.org/lookup.cgi?ip=61.243.43.113</response>
+    <response>220-  dnsbl.njabl.org - 127.0.0.4</response>
+    <response>220-       spam source -- 1033874216</response>
+    <response>220-  dnsbl.sorbs.net - 127.0.0.2</response>
+    <response>220-       HTTP Proxy See: http://www.dnsbl.sorbs.net/lookup.shtml?61.243.43.113</response>
+    <response>220-  list.dsbl.org - 127.0.0.2</response>
+    <response>220-       http://dsbl.org/listing?ip=61.243.43.113</response>
+    <response>220-  sbl-xbl.spamhaus.org - 127.0.0.4 127.0.0.6</response>
+    <response>220-       http://www.spamhaus.org/query/bl?ip=61.243.43.113</response>
+    <response>220 SMTP Spy ready</response>
+    <request>quit</request>
+    <response>221 OK, thanks for playing</response>
+  </command-log>
+  <disconnect-reason>quit-command</disconnect-reason>
+</smtp-spy>

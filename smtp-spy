@@ -1,0 +1,991 @@
+#!/usr/bin/perl -w
+# vi: set ts=4 sw=4 :
+
+use strict;
+	no strict 'refs';
+
+my $VERSION = '$Revision: 1.16 $';
+
+use FindBin;
+use lib $FindBin::Bin;
+use lib "/usr/lib/powernet-modules/PowerNet-PIDFile-0.01";
+
+sub showhelp { print <<EOF }
+Usage: smtp-spy [OPTIONS]
+
+Options are:
+    --dir=DIRECTORY     Log collected data into the given directory (default:
+                        the directory containing smtp-spy)
+    --log=FILE          Log diagnostic data to this file (default:
+                        "smtp-spy.log" in the log directory)
+    --fake-ip=X.X.X.X   For testing, pretend we received a connection from the
+                        given IP address (default: none, if standard input is
+                        a socket; otherwise, 127.0.0.2)
+    --fake-port=PORT    For testing, pretend we received a connection from the
+                        given peer port number (default: none, if standard
+                        input is a socket; otherwise, 1024)
+    --with-syslog
+    --without-syslog    Do/Don't log to syslog (default: log to syslog only if
+                        we're root)
+    --max-data-size=N   Allow no more than N bytes in the DATA chunk (default:
+                        10000)
+    --line-timeout=N    When reading a line of input, time out after N seconds
+                        (default: 60)
+    --max-line-length=N Accept input lines no longer than N characters
+                        (default: 1000)
+    --max-messages=N    Disconnect once the client has attempted to send N
+                        messages (default: 3).  Set to 0 for unlimited
+    --max-commands=N    Disconnect once the client has attempted N SMTP commands
+                        (default: 100).  Set to 0 for unlimited
+    --max-duration=N    Disconnect the client after N seconds (default: 300).
+                        Set to 0 for unlimited
+    --help              Shows this help
+
+EOF
+
+my $dir = $FindBin::Bin;
+my $log = undef;
+my $fake_ip;
+my $fake_port;
+my $do_syslog = ($< == 0);
+my $MAX_DATA_SIZE = 10_000;
+my $LINE_TIMEOUT = 60;
+my $MAX_LINE_LENGTH = 1000;
+my $MAX_MESSAGES = 3;
+my $MAX_COMMANDS = 100;
+my $MAX_DURATION = 300;
+use Getopt::Long;
+GetOptions(
+	"dir=s"				=> \$dir,
+	"log=s"				=> \$log,
+	"fake-ip=s"			=> \$fake_ip,
+	"fake-port=i"		=> \$fake_port,
+	"with-syslog"		=> sub { $do_syslog = 1 },
+	"without-syslog"	=> sub { $do_syslog = 0 },
+	"max-data-size=i"	=> \$MAX_DATA_SIZE,
+	"line-timeout=i"	=> \$LINE_TIMEOUT,
+	"max-line-length=i"	=> \$MAX_LINE_LENGTH,
+	"max-messages=i"	=> \$MAX_MESSAGES,
+	"max-commands=i"	=> \$MAX_COMMANDS,
+	"max-duration=i"	=> \$MAX_DURATION,
+	"help"				=> sub { showhelp(); exit },
+) or exit 2;
+$log = "$dir/smtp-spy.log" if not defined $log;
+
+open(STDERR, ">>$log");
+
+warn "Ignoring extra arguments" if @ARGV;
+
+use Fcntl qw( O_WRONLY O_CREAT O_EXCL );
+use Mail::Header;
+use Mail::SPF::Query;
+use Net::DNS;
+BEGIN { local $^W; require Net::Ident; };
+use POSIX qw( strftime );
+use Socket qw( $CRLF sockaddr_in inet_aton AF_INET inet_ntoa );
+use Unix::Syslog qw( :macros :subs );
+use XML::Writer;
+use PowerNet::PIDFile;
+use DNSBlacklist;
+use IO::Handle;
+
+use constant {
+	SPOOL_DIR_MODE	=> 0700,
+	SPOOL_FILE_MODE	=> 0600,
+};
+
+# Make spool dir
+mkdir $dir, SPOOL_DIR_MODE
+	or $!{EEXIST}
+	or die $!;
+
+my $client = *STDOUT;
+my $data = {};
+$SIG{INT} = sub { die "SIGINT\n" }
+	if -t STDIN;
+$SIG{TERM} = sub { die "SIGTERM\n" };
+$SIG{HUP} = sub { die "SIGHUP\n" };
+eval 'END { $data->{EXITCODE} = $?; disconnected($data) }';
+$client->autoflush;
+
+eval {
+	ie_connection($client);
+
+	for (;;)
+	{
+		my $line = read_line(\*STDIN, $LINE_TIMEOUT, $MAX_LINE_LENGTH);
+		last if not defined $line;
+		ie_input($client, \$line);
+	}
+
+	ie_eof($client);
+};
+
+if ($@)
+{
+	warn $@;
+	chomp($data->{EXCEPTION} = $@);
+	$data->{DISCONNECT_REASON} = "perl-exception";
+}
+# END handler deals with logging etc
+
+exit;
+
+################################################################################
+# Helpers
+################################################################################
+
+sub read_line
+{
+	my ($handle, $timeout, $maxlen) = @_;
+
+	my $line = "";
+
+	alarm(0);
+	$SIG{ALRM} = sub { die "TIMEOUT\n" };
+	alarm($timeout);
+
+	for (;;)
+	{
+		my $c = getc(STDIN);
+		last if not defined $c;
+
+		$line .= $c;
+		last if $c eq "\n";
+
+		if (length($line) >= $maxlen)
+		{
+			warn "Line reached $maxlen characters - ignoring rest of line\n";
+			my $discarded = 0;
+
+			for (;;)
+			{
+				my $c = getc(STDIN);
+				last if not defined $c;
+				last if $c eq "\n";
+				++$discarded;
+			}
+
+			warn "Discarded $discarded characters\n";
+			$line .= "\n";
+			last;
+		}
+	}
+
+	alarm(0);
+	$SIG{ALRM} = 'IGNORE';
+
+	return undef if $line eq "";
+	$line;
+}
+
+sub send_response($)
+{
+	my $line = shift;
+	$line =~ s/($CRLF|\015|\012|)\z//;
+	push @{ $data->{LOG} }, [ "response", $line ];
+	print $client $line.$CRLF;
+}
+
+sub printf_syslog($@)
+{
+	my ($fmt, @args) = @_;
+
+	if (not $do_syslog)
+	{
+		print STDERR gmtime() . " UTC : syslog: ";
+		printf STDERR $fmt, @args;
+		return;
+	}
+
+	openlog "smtp-spy", LOG_PID, LOG_MAIL;
+	syslog LOG_INFO, $fmt, @args;
+	closelog;
+}
+
+sub limit_string($$)
+{
+	return $_[0] if length($_[0]) <= $_[1];
+	substr($_[0], 0, $_[1]-3) . "...";
+}
+
+sub safestring($)
+{
+	my $str = $_[0];
+	$str =~ s/('|\\|[^\x20-\x7E])/ sprintf "\\x%02X", ord $1 /eg;
+	$str;
+}
+
+sub parse_headers($)
+{
+	my $dataref = shift;
+	$$dataref =~ /\A(.*?)\n\n/s or return undef;
+	my @lines = split /(?=^)/m, $1, -1;
+
+	my $head = new Mail::Header \@lines, Modify => 0;
+}
+
+sub is_recipient_local
+{
+	my $rcpt_to = shift;
+
+	my ($forward_path, $parameters) = split ' ', $rcpt_to, 2;
+	$forward_path =~ s/^<(.*)>$/$1/;
+
+	my ($user, $domain) = $forward_path =~ /^(.*)\@([^\@]+)$/;
+	not defined($domain) or is_domain_local($domain);
+}
+
+sub is_domain_local
+{
+	my $d = lc shift;
+	$d eq "195.60.9.122" or $d eq "localhost";
+}
+
+sub reset_data
+{
+	my ($data, $log) = @_;
+
+	if ($log)
+	{
+		my $xml = $data->{XMLWRITER};
+		$xml->startTag("aborted-transaction");
+		log_control_data($data);
+		$xml->endTag("aborted-transaction");
+	}
+
+	$data->{MAILFROM} = undef;
+	$data->{SPF_RESULT} = undef;
+	$data->{RCPTTO} = [];
+	$data->{DATA} = undef;
+	$data->{DATA_TRUNCATED} = undef;
+	$data->{HEADERS} = undef;
+	$data->{ACCEPTING_DATA} = 0;
+}
+
+################################################################################
+# IO::Event handlers
+################################################################################
+
+sub ie_connection
+{
+	my ($client) = @_;
+
+	#printf "accepted connection from %s:%s\n",
+	#	$client->peerhost, $client->peerport;
+
+	new_connection($client, $data);
+}
+
+sub ie_input
+{
+	my ($client, $ibufref) = @_;
+
+	if ($MAX_DURATION and time()-$data->{TIME} > $MAX_DURATION)
+	{
+		if ($data->{ACCEPTING_DATA})
+		{
+			# The client probably isn't expecting a response yet.
+			# We'll send one anyway.
+			send_response "554-Session time limit reached.  Bye!";
+		}
+		else
+		{
+			send_response "500 Session time limit reached.  Bye!";
+		}
+
+		close $client;
+		$data->{DISCONNECT_REASON} = "duration-limit-reached";
+		disconnected($data);
+		exit;
+	}
+
+	if ($data->{ACCEPTING_DATA})
+	{
+		accept_data($client, $data, $ibufref);
+	}
+	else
+	{
+		process_verb($client, $data, $ibufref);
+	}
+}
+
+sub ie_eof
+{
+	my ($client, $ibufref) = @_;
+
+	printf STDERR "%s : Lost connection from %s:%s\n",
+		gmtime()." UTC",
+		$data->{HOST}, $data->{PORT};
+
+	$data->{DISCONNECT_REASON} = "lost-connection";
+	disconnected($data);
+}
+
+################################################################################
+# Protocol handlers
+################################################################################
+
+#   CONNECTION ESTABLISHMENT
+#      S: 220
+#      E: 554
+
+sub new_connection
+{
+	my ($client, $data) = @_;
+
+	if (my $sockaddr = getpeername(STDIN))
+	{
+		($data->{PORT}, my $iaddr) = sockaddr_in($sockaddr);
+		$data->{HOST} = inet_ntoa($iaddr);
+		printf STDERR "%s : Accepted connection from %s:%d\n",
+			gmtime()." UTC",
+			$data->{HOST}, $data->{PORT},
+			;
+
+	}
+
+	$data->{TIME} = time;
+	$data->{LOG} = [];
+	$data->{NUMDATA} = 0;
+
+	if (my $ip = $fake_ip)
+	{
+		warn "Overriding IP address - using $ip instead\n";
+		$data->{HOST} = $ip;
+	}
+
+	if (my $port = $fake_port)
+	{
+		warn "Overriding peer port - using $port instead\n";
+		$data->{PORT} = $port;
+	}
+
+	if (not defined $data->{HOST})
+	{
+		my $fake = "127.0.0.2";
+		warn "Not a socket, and no --fake-ip specified - using $fake\n";
+		$data->{HOST} = $fake;
+	}
+
+	if (not defined $data->{PORT})
+	{
+		my $fake = "1024";
+		warn "Not a socket, and no --fake-port specified - using $fake\n";
+		$data->{PORT} = $fake;
+	}
+
+	my $timestamp = strftime("%Y%m%d-%H%M%S", gmtime);
+	my $seq = 0;
+	my $filename;
+	my $fh;
+
+	while (1)
+	{
+		$filename = "$timestamp-$seq-$data->{HOST}.xml";
+		sysopen($fh, $dir."/".$filename, O_WRONLY|O_CREAT|O_EXCL, SPOOL_FILE_MODE)
+			and last;
+		++$seq;
+		if ($seq > 9) { exit }
+	}
+
+	$fh->autoflush;
+	$data->{FH} = $fh;
+	$data->{FILENAME} = $filename;
+	printf STDERR "%s : Spooling into %s\n",
+		gmtime()." UTC",
+		$filename,
+		;
+
+	my $xml = new XML::Writer(OUTPUT => $fh, DATA_MODE => 1, DATA_INDENT => 2);
+	$data->{XMLWRITER} = $xml;
+	$xml->xmlDecl("UTF-8");
+
+	$xml->startTag("smtp-spy");
+	$xml->dataElement("version", $VERSION);
+
+	my $utc = strftime('%Y%m%d %H%M%S UTC', gmtime);
+	$xml->dataElement("connect-time", $utc);
+
+	$xml->startTag("peer");
+
+	$xml->dataElement("ipv4-address", $data->{HOST});
+	$xml->dataElement("ipv4-port", $data->{PORT});
+
+	# IDENT lookup
+	{
+		my $username = Net::Ident::lookup(\*STDIN, 5);
+		$data->{IDENT} = $username;
+		$xml->dataElement("ident", defined($username) ? $username : "");
+
+		printf { $client } "220-Hello %s:%s (%s)$CRLF",
+			$data->{HOST}, $data->{PORT},
+			defined($username) ? "'".safestring($username)."'" : "unknown",
+			;
+	}
+
+	# DNS reverse / forward lookup
+	{
+		my $ip = $data->{HOST};
+
+		# Get DNS name (reverse lookup).  gethostbyaddr is only capable of
+		# returning up to one name, even if there are more.
+		my ($names, $timeout, $error) = do_reverse_lookup($ip);
+
+		if ($timeout)
+		{
+			send_response "220-Timeout while doing reverse-lookup on $ip";
+			$xml->emptyTag("dns-lookup", status => "timeout");
+			last;
+		}
+
+		if ($error)
+		{
+			send_response "220-Error while doing reverse-lookup on $ip";
+			$xml->emptyTag("dns-lookup", status => "error");
+			last;
+		}
+
+		$data->{PTRNAMES} = $names;
+
+		if (not @$names)
+		{
+			send_response "220-Your IP address has no 'PTR' record";
+			$xml->emptyTag("dns-lookup", status => "no-reverse");
+			last;
+		}
+
+		my $any_match = 0;
+		my $any_mismatch = 0;
+		my %forward;
+
+		for my $name (@$names)
+		{
+			send_response sprintf "220-Your IP address has the name '%s'",
+				safestring($name);
+
+			# Forward-resolve that name
+			my @f = gethostbyname($name);
+
+			unless (@f)
+			{
+				send_response sprintf "220-The name '%s' does not resolve",
+					safestring($name);
+				next;
+			}
+
+			splice(@f, 0, 4);
+			my @ips = map { inet_ntoa($_) } @f;
+			$forward{$name} = \@ips;
+
+			send_response sprintf "220-The name '%s' resolves to: %s",
+				safestring($name), join(", ", @ips);
+
+			for (@ips)
+			{
+				($_ eq $ip)
+					? ++$any_match
+					: ++$any_mismatch;
+			}
+		}
+
+		if ($any_match and not $any_mismatch)
+		{
+			send_response "220-Your forward and reverse records match, good";
+			$xml->startTag("dns-lookup", status => "forward-matches");
+		}
+		elsif ($any_mismatch and not $any_match)
+		{
+			send_response "220-Your forward and reverse records do not match";
+			$xml->startTag("dns-lookup", status => "forward-mismatch");
+		}
+		elsif ($any_match and $any_mismatch)
+		{
+			send_response "220-Your forward records partially match your reverse records";
+			$xml->startTag("dns-lookup", status => "forward-mixed");
+		}
+		else # (not $any_match and not $any_mismatch)
+		{
+			send_response "220-No forward records found";
+			$xml->startTag("dns-lookup", status => "forward-missing");
+		}
+
+		# Write $names, %forward to XML
+		for my $ptrdname (sort @$names)
+		{
+			my $ips = $forward{$ptrdname}
+				or next;
+
+			$xml->startTag("reverse-lookup");
+				$xml->dataElement("dns-ptr-rr", $ptrdname);
+				$xml->startTag("forward-lookup");
+					$xml->dataElement("dns-a-rr", $_) for @$ips;
+				$xml->endTag("forward-lookup");
+			$xml->endTag("reverse-lookup");
+		}
+
+		$xml->endTag("dns-lookup");
+
+		$data->{PTRFORWARD} = \%forward;
+		$data->{PTRMATCHES} = $any_match;
+		$data->{PTRMISMATCHES} = $any_mismatch;
+	}
+
+	# DNS blacklist lookups
+	{
+
+		(my $ans) = E2EFilter::DNSBlacklist->MultipleLookup(
+			$data->{HOST},
+			[qw(
+				bl.spamcop.net
+			 	block.blars.org
+				cbl.abuseat.org
+				dnsbl.njabl.org
+				dnsbl.sorbs.net
+				list.dsbl.org
+				relays.ordb.org
+				sbl-xbl.spamhaus.org
+			)],
+			all => 1,
+		);
+		$data->{DNSBL} = $ans;
+
+		my $iHits = grep { $_->[0] } values %$ans;
+		if ($iHits == 0)
+		{
+			send_response "220-Congratulations, you're not on any of my preferred DNS blacklists";
+		}
+		else
+		{
+			send_response "220-I see you're on the following DNS blacklist(s):";
+			for my $zone (sort keys %$ans)
+			{
+				my $v = $ans->{$zone};
+				my $addrs = $v->[2] or next;
+				send_response sprintf "220-  %s - %s", $zone, join(" ", @$addrs);
+				my $txts = $v->[3];
+				send_response sprintf "220-       %s", $_ for @$txts;
+			}
+		}
+
+		$xml->startTag("dnsbl-lookup", hits => $iHits);
+
+		for my $zone (sort keys %$ans)
+		{
+			my $v = $ans->{$zone} or next;
+
+			$xml->startTag("zone");
+
+			$xml->dataElement("name", $zone);
+
+			if (my $t = $v->[2])
+			{
+				$xml->startTag("dns-a-rrs");
+				$xml->dataElement("dns-a-rr", $_) for @$t;
+				$xml->endTag("dns-a-rrs");
+			}
+
+			if (my $t = $v->[3])
+			{
+				$xml->startTag("dns-txt-rrs");
+				$xml->dataElement("dns-txt-rr", $_) for @$t;
+				$xml->endTag("dns-txt-rrs");
+			}
+
+			$xml->endTag("zone");
+		}
+
+		$xml->endTag("dnsbl-lookup");
+	}
+
+	$xml->endTag("peer");
+	$xml->startTag("messages");
+
+	reset_data($data, 0);
+
+	send_response "220 SMTP Spy ready";
+}
+
+sub process_verb
+{
+	my ($client, $data, $ibufref) = @_;
+	my $line = $$ibufref;
+	defined $line or return;
+	$line =~ s/($CRLF|\015|\012|)\z//;
+
+	push @{ $data->{LOG} }, [ "request", $line ];
+
+	my $n_commands = grep { $_->[0] eq "request" } @{ $data->{LOG} };
+	if ($MAX_COMMANDS and $n_commands > $MAX_COMMANDS)
+	{
+		send_response "503 Command limit reached.  Thanks for playing!";
+		close $client;
+		$data->{DISCONNECT_REASON} = "command-limit-reached";
+		disconnected($data);
+		exit;
+	}
+
+	if ($line =~ /^(?:HELO|EHLO)\s+(\S+)\s*$/i)
+	{
+      # S: 250
+      # E: 504, 550
+	  	my $new = $1;
+
+	  	my $old = $data->{HELO};
+		if (defined($old) and $old ne $new)
+		{
+			my $xml = $data->{XMLWRITER};
+			$xml->startTag("helo-changed");
+			$xml->dataElement("old-helo", $old);
+			$xml->dataElement("new-helo", $new);
+			$xml->endTag("helo-changed");
+		}
+
+	  	$data->{HELO} = $new;
+		send_response sprintf "250 Hello '%s'", safestring($new);
+	}
+	elsif ($line =~ /^MAIL\s+FROM:\s*(.*)\s*$/i)
+	{
+      # S: 250
+      # E: 552, 451, 452, 550, 553, 503
+
+		if (not defined $data->{HELO})
+		{
+			send_response "503 Need HELO first";
+		}
+		elsif (defined $data->{MAILFROM})
+		{
+			send_response "503 Already got a sender; use RSET to reset";
+		}
+		else
+		{
+			$data->{MAILFROM} = $1;
+			check_sender($client, $data);
+			send_response "250 Got it";
+		}
+	}
+	elsif ($line =~ /^RCPT\s+TO:\s*(.*)\s*$/i)
+	{
+      # S: 250, 251 (but see section 3.4 for discussion of 251 and 551)
+      # E: 550, 551, 552, 553, 450, 451, 452, 503, 550
+
+		if (not defined $data->{MAILFROM})
+		{
+			send_response "503 Need MAIL FROM first";
+		}
+		else
+		{
+			my $rcpt_to = $1;
+			if (is_recipient_local($rcpt_to))
+			{
+				send_response "500 Bzzzzzt! Try again";
+				printf STDERR "%s : %s:%d tried local recipient (%s)\n",
+					gmtime()." UTC",
+					$data->{HOST}, $data->{PORT},
+					$rcpt_to,
+					;
+				++$data->{TRIED_LOCAL_RCPT};
+			} else {
+				push @{ $data->{RCPTTO} }, $1;
+				send_response "250 Uh-huh";
+			}
+		}
+	}
+	elsif ($line =~ /^DATA\s*$/i)
+	{
+      # I: 354 -> data -> S: 250
+      #                  E: 552, 554, 451, 452
+      # E: 451, 554, 503
+
+		unless (defined $data->{MAILFROM} and @{ $data->{RCPTTO} })
+		{
+			send_response "503 Need MAIL FROM and at least one RCPT TO first";
+		}
+		else
+		{
+			$data->{DATA} = "";
+			$data->{DATA_TRUNCATED} = 0;
+			$data->{ACCEPTING_DATA} = 1;
+			$data->{DATA_SIZE} = 0;
+			send_response "354 OK, what's the message?";
+		}
+	}
+	elsif ($line =~ /^RSET\s*$/i)
+	{
+      # S: 250
+		send_response "250 Let's begin again";
+		reset_data($data, 1);
+	}
+	elsif ($line =~ /^VRFY(\s|$)/i)
+	{
+      # S: 250, 251, 252
+      # E: 550, 551, 553, 502, 504
+		send_response "502 Sorry, not implemented";
+	}
+	elsif ($line =~ /^EXPN(\s|$)/i)
+	{
+      # S: 250, 252
+      # E: 550, 500, 502, 504
+		send_response "502 Sorry, not implemented";
+	}
+	elsif ($line =~ /^HELP(\s|$)/i)
+	{
+      # S: 211, 214
+      # E: 502, 504
+		send_response "502 For help, see RFC2821";
+	}
+	elsif ($line =~ /^NOOP\s*$/i)
+	{
+      # S: 250
+		send_response "250 Errrr, OK";
+	}
+	elsif ($line =~ /^QUIT\s*$/i)
+	{
+      # S: 221
+	  	send_response "221 OK, thanks for playing";
+		close $client;
+		$data->{DISCONNECT_REASON} = "quit-command";
+		disconnected($data);
+		exit;
+	}
+	else
+	{
+		send_response "500 Command not recognized";
+	}
+}
+
+sub check_sender
+{
+	my ($client, $data) = @_;
+
+	my $query = Mail::SPF::Query->new(
+		ip		=> $data->{HOST},
+		sender	=> $data->{MAILFROM},
+		helo	=> "aol.com",
+		trusted	=> 1,
+		guess	=> 1,
+	);
+
+	# Just store for now.  We'll log this later when we've got all the data
+	my $spf = $data->{SPF_RESULT} = [ $query->result ];
+
+	my ($result, $smtp_comment, $header_comment, $spf_record) = @$spf;
+
+	send_response "250-SPF result: $result - $smtp_comment";
+}
+
+sub accept_data
+{
+	my ($client, $data, $ibufref) = @_;
+	my $line = $$ibufref;
+	$line =~ s/($CRLF|\015|\012|)\z/\n/;
+
+	if ($line eq ".\n")
+	{
+		end_of_data($client, $data);
+	} else {
+
+		$data->{DATA_SIZE} += length($line);
+
+		my $ol = length($data->{DATA});
+		my $nl = $ol + length($line);
+
+		if ($nl <= $MAX_DATA_SIZE)
+		{
+			$data->{DATA} .= $line;
+		}
+		elsif ($ol >= $MAX_DATA_SIZE)
+		{
+			# Discard
+		}
+		else
+		{
+			send_response "554-Maximum message size reached, subsequent data will be discarded";
+			my $space = $MAX_DATA_SIZE - $ol;
+			$data->{DATA} .= substr($line, 0, $space);
+			$data->{DATA_TRUNCATED} = 1;
+		}
+	}
+}
+
+sub end_of_data
+{
+	my ($client, $data) = @_;
+
+	push @{ $data->{LOG} }, [ "request", "." ];
+	++$data->{NUMDATA};
+
+	my $headers = parse_headers(\$data->{DATA});
+	$data->{HEADERS} = $headers;
+
+	my $subject = undef;
+	$subject = ($headers ? $headers->get("Subject") : undef);
+	chomp $subject if defined $subject;
+
+	my $rcpts = join ",", map { safestring($_) } @{ $data->{RCPTTO} };
+
+	printf_syslog "peer=%s:%d from=%s to=%s subject=%s\n",
+		$data->{HOST}, $data->{PORT},
+		limit_string(safestring($data->{MAILFROM}), 50),
+		limit_string($rcpts, 50),
+		defined($subject)
+			? limit_string(safestring($subject), 50)
+			: "-",
+		;
+
+	# Store in log file
+	{
+		my $xml = $data->{XMLWRITER};
+
+		$xml->startTag("message");
+
+		log_control_data($data);
+
+		if ($headers)
+		{
+			$xml->startTag("mail-header");
+
+			for my $tag (qw( subject to from cc ))
+			{
+				my $v = $headers->get($tag)
+					or next;
+				chomp $v;
+				$xml->dataElement($tag, $v);
+			}
+
+			$xml->endTag("mail-header");
+		}
+
+		my $d = $data->{DATA};
+		my %truncated;
+		$truncated{truncated} = 1 if $data->{DATA_TRUNCATED};
+		$xml->cdataElement(
+			"data", $d,
+			"captured-length"	=> length($d),
+			"sent-length"		=> $data->{DATA_SIZE},
+			%truncated,
+		);
+
+		$xml->endTag("message");
+	}
+
+	# Reset in case they want to play again
+	reset_data($data, 0);
+
+	if ($MAX_MESSAGES and $data->{NUMDATA} >= $MAX_MESSAGES)
+	{
+		send_response "554-Mail stored for later inspection";
+		send_response "554 Message limit reached.  Thanks for playing!";
+		close $client;
+		$data->{DISCONNECT_REASON} = "message-limit-reached";
+		disconnected($data);
+		exit;
+	} else {
+		send_response "554 Mail stored for later inspection";
+	}
+}
+
+sub disconnected
+{
+	my $data = shift;
+	return if $data->{FINISHED}++;
+	my $xml = $data->{XMLWRITER};
+
+	if ($xml)
+	{
+		$xml->endTag("messages");
+
+		my $utc = strftime('%Y%m%d %H%M%S UTC', gmtime);
+		$xml->dataElement("disconnect-time", $utc);
+
+		reset_data($data, 1);
+
+		$xml->dataElement("message-count", $data->{NUMDATA});
+
+		$xml->startTag("command-log");
+		$xml->dataElement($_->[0], $_->[1]) for @{ $data->{LOG} };
+		$xml->endTag("command-log");
+
+		$xml->dataElement("exit-code", $data->{EXITCODE})
+			if $data->{EXITCODE};
+		$xml->dataElement("perl-exception", $data->{EXCEPTION})
+			if $data->{EXCEPTION};
+		$xml->dataElement("disconnect-reason", $data->{DISCONNECT_REASON})
+			if $data->{DISCONNECT_REASON};
+
+		$xml->endTag("smtp-spy");
+		$xml->end;
+	}
+
+	close $data->{FH} if $data->{FH};
+
+	if ($data->{TRIED_LOCAL_RCPT} and not $data->{NUMDATA})
+	{
+		printf STDERR "%s : %s:%d tried local recipient, renaming file\n",
+			gmtime()." UTC",
+			$data->{HOST}, $data->{PORT},
+			;
+		my $old = $data->{FILENAME};
+		(my $new = $old) =~ s/\.xml/\.local-spam\.xml/;
+		rename "$dir/$old", "$dir/$new" or warn "rename $old => $new failed: $!\n";
+	}
+
+	printf_syslog "peer=%s:%d attempted=%d file=%s local=%s\n",
+		$data->{HOST}, $data->{PORT},
+		$data->{NUMDATA},
+		$data->{FILENAME},
+		$data->{TRIED_LOCAL_RCPT} ? "Y" : "n",
+		;
+	printf STDERR "%s : %s:%d disconnected (%s)\n",
+		gmtime()." UTC",
+		$data->{HOST}, $data->{PORT},
+		$data->{DISCONNECT_REASON} | "",
+		;
+}
+
+sub log_control_data
+{
+	my $data = shift;
+	my $xml = $data->{XMLWRITER};
+
+	$xml->dataElement("helo", $data->{HELO})
+		if defined $data->{HELO};
+	$xml->dataElement("mail-from", $data->{MAILFROM})
+		if defined $data->{MAILFROM};
+
+	if (my $spf = $data->{SPF_RESULT})
+	{
+		my ($result, $smtp_comment, $header_comment, $spf_record) = @$spf;
+		$xml->startTag("spf-query");
+		$xml->dataElement("result", $result);
+		$xml->dataElement("smtp-comment", $smtp_comment);
+		$xml->dataElement("header-comment", $header_comment);
+		$xml->dataElement("spf-record", $spf_record);
+		$xml->endTag("spf-query");
+	}
+
+	$xml->dataElement("rcpt-to", $_)
+		for @{ $data->{RCPTTO} };
+}
+
+################################################################################
+
+sub do_reverse_lookup
+{
+	my $ip = shift;
+
+	my $res = Net::DNS::Resolver->new;
+	$res->udp_timeout(10);
+
+	my $ans = $res->query($ip) # Net::DNS automatically handles PTR
+		or return([], 1, 0); # timeout
+
+	$ans->header->rcode eq "NOERROR"
+		or return([], 0, 1); # error
+
+	my @names = map { $_->ptrdname } grep { $_->type eq "PTR" } $ans->answer;
+
+	(\@names, 0, 0); # success
+}
+
+# eof smtp-spy
